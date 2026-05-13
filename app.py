@@ -2,16 +2,36 @@ import streamlit as st
 import pandas as pd
 import pickle
 
-# Load model files
-model = pickle.load(open('model.pkl', 'rb'))
-scaler = pickle.load(open('scaler.pkl', 'rb'))
-encoder = pickle.load(open('encoder.pkl', 'rb'))
+# -------------------------------
+# Load saved files safely
+# -------------------------------
+
+try:
+    model = pickle.load(open("model.pkl", "rb"))
+    scaler = pickle.load(open("scaler.pkl", "rb"))
+    encoder = pickle.load(open("encoder.pkl", "rb"))
+
+except Exception as e:
+    st.error(f"Error loading model files: {e}")
+    st.stop()
+
+# -------------------------------
+# Streamlit UI
+# -------------------------------
+
+st.set_page_config(
+    page_title="Customer Churn Prediction",
+    layout="centered"
+)
 
 st.title("Customer Churn Prediction App")
 
 st.write("Enter Customer Information")
 
-# Inputs
+# -------------------------------
+# Input fields
+# -------------------------------
+
 gender = st.selectbox(
     "Gender",
     ["Male", "Female"]
@@ -56,86 +76,130 @@ enrollment_type = st.selectbox(
 
 total_flights = st.number_input(
     "Total Flights",
-    min_value=0
+    min_value=0,
+    value=0
 )
 
 distance = st.number_input(
     "Distance",
-    min_value=0.0
+    min_value=0.0,
+    value=0.0
 )
 
 points_accumulated = st.number_input(
     "Points Accumulated",
-    min_value=0.0
+    min_value=0.0,
+    value=0.0
 )
 
 points_redeemed = st.number_input(
     "Points Redeemed",
-    min_value=0.0
+    min_value=0.0,
+    value=0.0
 )
 
 salary = st.number_input(
     "Salary",
-    min_value=0.0
+    min_value=0.0,
+    value=0.0
 )
 
 clv = st.number_input(
     "CLV",
-    min_value=0.0
+    min_value=0.0,
+    value=0.0
 )
 
-# Feature engineering
-redemption_rate = (
-    points_redeemed /
-    (points_accumulated + 1)
-)
+# -------------------------------
+# Predict Button
+# -------------------------------
 
-avg_distance_per_flight = (
-    distance /
-    (total_flights + 1)
-)
+if st.button("Predict Churn"):
 
-points_per_flight = (
-    points_accumulated /
-    (total_flights + 1)
-)
+    try:
 
-clv_per_flight = (
-    clv /
-    (total_flights + 1)
-)
+        # -------------------------------
+        # Feature Engineering
+        # -------------------------------
 
-# Prediction button
-if st.button("Predict"):
+        redemption_rate = (
+            points_redeemed /
+            (points_accumulated + 1)
+        )
 
-    input_df = pd.DataFrame({
-        'Gender':[gender],
-        'Education':[education],
-        'Marital Status':[marital_status],
-        'Loyalty Card':[loyalty_card],
-        'Enrollment Type':[enrollment_type],
-        'Total Flights':[total_flights],
-        'Distance':[distance],
-        'Points Accumulated':[points_accumulated],
-        'Points Redeemed':[points_redeemed],
-        'Salary':[salary],
-        'CLV':[clv],
-        'Redemption Rate':[redemption_rate],
-        'Avg Distance Per Flight':[avg_distance_per_flight],
-        'Points Per Flight':[points_per_flight],
-        'CLV Per Flight':[clv_per_flight]
-    })
+        avg_distance_per_flight = (
+            distance /
+            (total_flights + 1)
+        )
 
-    # Encode
-    input_encoded = encoder.transform(input_df)
+        points_per_flight = (
+            points_accumulated /
+            (total_flights + 1)
+        )
 
-    # Scale
-    input_scaled = scaler.transform(input_encoded)
+        clv_per_flight = (
+            clv /
+            (total_flights + 1)
+        )
 
-    # Predict
-    prediction = model.predict(input_scaled)
+        # -------------------------------
+        # Create dataframe
+        # -------------------------------
 
-    if prediction[0] == 1:
-        st.error("Customer is likely to churn")
-    else:
-        st.success("Customer is likely to stay")
+        input_df = pd.DataFrame({
+
+            'Gender': [gender],
+            'Education': [education],
+            'Marital Status': [marital_status],
+            'Loyalty Card': [loyalty_card],
+            'Enrollment Type': [enrollment_type],
+
+            'Total Flights': [total_flights],
+            'Distance': [distance],
+            'Points Accumulated': [points_accumulated],
+            'Points Redeemed': [points_redeemed],
+            'Salary': [salary],
+            'CLV': [clv],
+
+            'Redemption Rate': [redemption_rate],
+            'Avg Distance Per Flight': [avg_distance_per_flight],
+            'Points Per Flight': [points_per_flight],
+            'CLV Per Flight': [clv_per_flight]
+
+        })
+
+        # -------------------------------
+        # Transform data
+        # -------------------------------
+
+        input_encoded = encoder.transform(input_df)
+
+        input_scaled = scaler.transform(input_encoded)
+
+        # -------------------------------
+        # Prediction
+        # -------------------------------
+
+        prediction = model.predict(input_scaled)
+
+        # -------------------------------
+        # Result
+        # -------------------------------
+
+        st.subheader("Prediction Result")
+
+        if prediction[0] == 1:
+
+            st.error(
+                "Customer is likely to churn"
+            )
+
+        else:
+
+            st.success(
+                "Customer is likely to stay"
+            )
+
+    except Exception as e:
+
+        st.error(f"Prediction Error: {e}")
