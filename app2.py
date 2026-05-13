@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
-import pickle
 
-# Load model files
-model = pickle.load(open('model.pkl', 'rb'))
-scaler = pickle.load(open('scaler.pkl', 'rb'))
-encoder = pickle.load(open('encoder.pkl', 'rb'))
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
 # Load datasets
 loyalty = pd.read_csv("Customer Loyalty History.csv")
@@ -19,88 +18,125 @@ df = pd.merge(
     how="left"
 )
 
+# Create churn column
+df['Churn'] = df['Cancellation Year'].notnull().astype(int)
+
 # Fill missing salary
 df['Salary'] = df['Salary'].fillna(df['Salary'].median())
 
+# Aggregate customer data
+customer_df = df.groupby('Loyalty Number').agg({
+    'Total Flights':'sum',
+    'Distance':'sum',
+    'Points Accumulated':'sum',
+    'Points Redeemed':'sum',
+    'Salary':'first',
+    'CLV':'first',
+    'Gender':'first',
+    'Education':'first',
+    'Marital Status':'first',
+    'Loyalty Card':'first',
+    'Enrollment Type':'first',
+    'Churn':'max'
+}).reset_index()
+
+# Feature engineering
+customer_df['Redemption Rate'] = (
+    customer_df['Points Redeemed'] /
+    (customer_df['Points Accumulated'] + 1)
+)
+
+customer_df['Avg Distance Per Flight'] = (
+    customer_df['Distance'] /
+    (customer_df['Total Flights'] + 1)
+)
+
+customer_df['Points Per Flight'] = (
+    customer_df['Points Accumulated'] /
+    (customer_df['Total Flights'] + 1)
+)
+
+customer_df['CLV Per Flight'] = (
+    customer_df['CLV'] /
+    (customer_df['Total Flights'] + 1)
+)
+
+# Features and target
+X = customer_df.drop(
+    ['Loyalty Number', 'Churn'],
+    axis=1
+)
+
+y = customer_df['Churn']
+
+# Encoding
+ct = ColumnTransformer(
+    transformers=[
+        (
+            'encoder',
+            OneHotEncoder(drop='first'),
+            [
+                'Gender',
+                'Education',
+                'Marital Status',
+                'Loyalty Card',
+                'Enrollment Type'
+            ]
+        )
+    ],
+    remainder='passthrough'
+)
+
+X = ct.fit_transform(X)
+
+# Scaling
+sc = StandardScaler(with_mean=False)
+
+X = sc.fit_transform(X)
+
+# Train model
+classifier = SVC(
+    kernel='rbf',
+    random_state=0
+)
+
+classifier.fit(X, y)
+
+# Streamlit UI
 st.title("Customer Churn Prediction")
 
-st.write("Enter Loyalty Number")
-
-# Loyalty number input
 loyalty_number = st.number_input(
-    "Loyalty Number",
+    "Enter Loyalty Number",
     min_value=0,
     step=1
 )
 
-# Predict button
-if st.button("Predict Churn"):
+if st.button("Predict"):
 
-    # Filter customer
-    customer = df[df['Loyalty Number'] == loyalty_number]
+    customer = customer_df[
+        customer_df['Loyalty Number'] == loyalty_number
+    ]
 
     if customer.empty:
+
         st.error("Loyalty Number not found")
-    
+
     else:
 
-        # Aggregate customer data
-        customer_df = customer.groupby('Loyalty Number').agg({
-            'Total Flights':'sum',
-            'Distance':'sum',
-            'Points Accumulated':'sum',
-            'Points Redeemed':'sum',
-            'Salary':'first',
-            'CLV':'first',
-            'Gender':'first',
-            'Education':'first',
-            'Marital Status':'first',
-            'Loyalty Card':'first',
-            'Enrollment Type':'first'
-        }).reset_index()
-
-        # Feature engineering
-        customer_df['Redemption Rate'] = (
-            customer_df['Points Redeemed'] /
-            (customer_df['Points Accumulated'] + 1)
-        )
-
-        customer_df['Avg Distance Per Flight'] = (
-            customer_df['Distance'] /
-            (customer_df['Total Flights'] + 1)
-        )
-
-        customer_df['Points Per Flight'] = (
-            customer_df['Points Accumulated'] /
-            (customer_df['Total Flights'] + 1)
-        )
-
-        customer_df['CLV Per Flight'] = (
-            customer_df['CLV'] /
-            (customer_df['Total Flights'] + 1)
-        )
-
-        # Keep only model features
-        X = customer_df.drop(
-            ['Loyalty Number'],
+        customer_input = customer.drop(
+            ['Loyalty Number', 'Churn'],
             axis=1
         )
 
-        # Encode
-        X_encoded = encoder.transform(X)
+        customer_encoded = ct.transform(customer_input)
 
-        # Scale
-        X_scaled = scaler.transform(X_encoded)
+        customer_scaled = sc.transform(customer_encoded)
 
-        # Predict
-        prediction = model.predict(X_scaled)
+        prediction = classifier.predict(customer_scaled)
 
-        # Show customer details
-        st.subheader("Customer Information")
+        st.subheader("Customer Details")
+        st.write(customer)
 
-        st.write(customer_df)
-
-        # Prediction result
         if prediction[0] == 1:
             st.error("Customer is likely to churn")
         else:
